@@ -4,8 +4,9 @@ import mongoose from 'mongoose';
 const UserSchema = new mongoose.Schema({
   phoneNumber: {
     type: String,
-    required: true,
-    unique: true
+    required: false,
+    unique: true,
+    sparse: true
   },
   username: {
     type: String,
@@ -17,9 +18,23 @@ const UserSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  name: {
+    type: String,
+    required: false
+  },
   password: {
     type: String,
-    required: true
+    required: false
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
   },
   role: {
     type: String,

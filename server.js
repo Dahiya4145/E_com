@@ -19,6 +19,7 @@ import messageRoutes from "./routes/message.routes.js";
 import statsRoutes from "./routes/stats.routes.js";
 import bannerRoutes from "./routes/bannerRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
+import jobRoutes from "./routes/jobRoutes.js";
 
 dotenv.config();
 
@@ -98,6 +99,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/banners", bannerRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/jobs", jobRoutes);
 
 // ---------- GLOBAL ERROR HANDLER ----------
 app.use((err, req, res, next) => {

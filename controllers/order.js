@@ -6,6 +6,62 @@ import User from "../models/User.js";
 // @desc    Create new order
 // @route   POST /api/orders
 // @access  Private
+// Helper to send notifications for new orders
+export const sendNewOrderNotifications = async (order, user) => {
+    try {
+        // Create User Notification
+        await Notification.create({
+            user: user._id || user.id,
+            title: "Order Placed!",
+            message: `Your order #${order._id.toString().slice(-8)} has been placed successfully.`,
+            type: "order",
+            link: "/orders",
+            read: false,
+            relatedOrder: order._id
+        });
+
+        // Notify Admins about new order
+        const admins = await User.find({ role: 'admin' });
+        for (const admin of admins) {
+            if (admin.notificationPreferences?.orderAlerts !== false) {
+                await Notification.create({
+                    user: admin._id,
+                    title: "New Order Received!",
+                    message: `Order #${order._id.toString().slice(-8)} totaling ₹${order.totalPrice} has been placed.`,
+                    type: "order",
+                    link: `/admin/order/${order._id}`,
+                    read: false,
+                    relatedOrder: order._id
+                });
+            }
+        }
+
+        // Check for Low Stock and notify admins
+        for (const item of order.orderItems) {
+            const product = await Product.findById(item.product);
+            if (product && product.countInStock <= 5) { // Threshold for low stock
+                for (const admin of admins) {
+                    if (admin.notificationPreferences?.lowStockAlerts !== false) {
+                        await Notification.create({
+                            user: admin._id,
+                            title: "Low Stock Alert!",
+                            message: `Product "${product.name}" is low in stock (${product.countInStock} remaining).`,
+                            type: "tracking",
+                            link: `/admin/product/${product._id}/edit`,
+                            read: false
+                        });
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error sending order notifications:", error);
+    }
+};
+
+// @desc    Create new order
+// @route   POST /api/orders
+// @access  Private
 export const addOrderItems = async (req, res, next) => {
     try {
         const {
@@ -65,7 +121,6 @@ export const addOrderItems = async (req, res, next) => {
         const createdOrder = await order.save();
 
         // Update product stock
-        // Update product stock
         for (const item of orderItems) {
             // Try updating as main product
             const updatedMain = await Product.findByIdAndUpdate(item.product, {
@@ -81,54 +136,19 @@ export const addOrderItems = async (req, res, next) => {
             }
         }
 
-        // Create User Notification
-        await Notification.create({
-            user: req.user.id,
-            title: "Order Placed!",
-            message: `Your order #${createdOrder._id.toString().slice(-8)} has been placed successfully.`,
-            type: "order",
-            link: "/orders",
-            read: false,
-            relatedOrder: createdOrder._id
-        });
+        // Only send notifications immediately for COD
+        // Online payment notifications will be sent after payment verification
 
-        // Notify Admins about new order
-        const admins = await User.find({ role: 'admin' });
-        for (const admin of admins) {
-            if (admin.notificationPreferences?.orderAlerts !== false) {
-                await Notification.create({
-                    user: admin._id,
-                    title: "New Order Received!",
-                    message: `Order #${createdOrder._id.toString().slice(-8)} totaling ₹${totalPrice} has been placed.`,
-                    type: "order",
-                    link: `/admin/order/${createdOrder._id}`,
-                    read: false,
-                    relatedOrder: createdOrder._id
-                });
-            }
-        }
+        const isOnlinePayment = paymentMethod &&
+            (paymentMethod.toLowerCase() === 'online' || paymentMethod.toLowerCase() === 'razorpay');
 
-        // Check for Low Stock and notify admins
-        for (const item of orderItems) {
-            const product = await Product.findById(item.product);
-            if (product && product.countInStock <= 5) { // Threshold for low stock
-                for (const admin of admins) {
-                    if (admin.notificationPreferences?.lowStockAlerts !== false) {
-                        await Notification.create({
-                            user: admin._id,
-                            title: "Low Stock Alert!",
-                            message: `Product "${product.name}" is low in stock (${product.countInStock} remaining).`,
-                            type: "tracking",
-                            link: `/admin/product/${product._id}/edit`,
-                            read: false
-                        });
-                    }
-                }
-            }
+        if (!isOnlinePayment) {
+            await sendNewOrderNotifications(createdOrder, req.user);
         }
 
         res.status(201).json(createdOrder);
     } catch (error) {
+        console.error("Order creation error:", error);
         next(error);
     }
 };
@@ -302,5 +322,39 @@ export const cancelOrder = async (req, res, next) => {
     } else {
         res.status(404);
         throw new Error('Order not found');
+    }
+};
+
+// @desc    Strictly delete order and restore stock (for failed/cancelled online payments)
+// @route   PUT /api/orders/:id/abandon
+// @access  Private
+export const abandonOrder = async (req, res, next) => {
+    try {
+        const order = await Order.findById(req.params.id);
+
+        if (order) {
+            // Restore stock
+            for (const item of order.orderItems) {
+                const updatedMain = await Product.findByIdAndUpdate(item.product, {
+                    $inc: { countInStock: item.qty }
+                });
+
+                if (!updatedMain) {
+                    await Product.findOneAndUpdate(
+                        { "addOnItems._id": item.product },
+                        { $inc: { "addOnItems.$.countInStock": item.qty } }
+                    );
+                }
+            }
+
+            // Strictly delete the order from MongoDB
+            await Order.findByIdAndDelete(req.params.id);
+            res.json({ message: 'Order record permanently deleted and stock restored' });
+        } else {
+            res.status(404);
+            throw new Error('Order not found');
+        }
+    } catch (error) {
+        next(error);
     }
 };

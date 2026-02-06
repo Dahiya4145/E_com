@@ -1,6 +1,7 @@
 import Order from '../models/Order.js';
 import { createMockPaymentOrder, verifyMockPayment, paymentConfig } from '../config/payment.js';
 import { createPaymentNotification, createOrderNotification } from '../services/notificationService.js';
+import { sendNewOrderNotifications } from './order.js';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 
@@ -120,6 +121,10 @@ export const verifyPayment = async (req, res) => {
             });
 
             await order.save();
+
+            // Send the notifications that were delayed during order creation
+            await sendNewOrderNotifications(order, req.user);
+
             await createPaymentNotification(order.user, order, 'success');
             await createOrderNotification(order.user, order, 'order_created');
 

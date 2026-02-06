@@ -8,12 +8,22 @@ const router = express.Router();
 // Create a message (Public)
 router.post("/", async (req, res) => {
     try {
-        const { name, email, subject, message } = req.body;
-        if (!name || !email || !subject || !message) {
+        const { name, email, subject, message, mobile } = req.body;
+        if (!name || !email || !subject || !message || !mobile) {
             return res.status(400).json({ success: false, message: "All fields are required" });
         }
 
-        const newMessage = new Message({ name, email, subject, message });
+        const mobileRegex = /^\d{10}$/;
+        if (!mobileRegex.test(mobile)) {
+            return res.status(400).json({ success: false, message: "Invalid mobile number format" });
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ success: false, message: "Invalid email address format" });
+        }
+
+        const newMessage = new Message({ name, email, subject, message, mobile });
         await newMessage.save();
 
         // Notify Admins about new message
@@ -24,7 +34,7 @@ router.post("/", async (req, res) => {
             await Notification.create({
                 user: admin._id,
                 title: "New Message Received!",
-                message: `From: ${name} - ${subject}`,
+                message: `From: ${name} (${mobile}) - ${subject}`,
                 type: "general",
                 link: "/admin/messages",
                 read: false

@@ -7,6 +7,7 @@ import {
   getMyOrders,
   getOrders,
   cancelOrder,
+  abandonOrder,
 } from "../controllers/order.js";
 
 import { verifyToken, verifyAdmin } from "../utils/verifyToken.js";
@@ -31,5 +32,8 @@ router.route("/:id/deliver")
 
 router.route("/:id/cancel")
   .put(verifyToken, cancelOrder);
+
+router.route("/:id/abandon")
+  .put(verifyToken, abandonOrder);
 
 export default router;
