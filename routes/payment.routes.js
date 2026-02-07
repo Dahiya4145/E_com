@@ -3,7 +3,8 @@ import {
     createPaymentOrder,
     verifyPayment,
     handlePaymentFailure,
-    getPaymentStatus
+    getPaymentStatus,
+    handleWebhook
 } from '../controllers/payment.js';
 
 import { verifyToken } from '../utils/verifyToken.js';
@@ -18,6 +19,9 @@ router.post('/verify', verifyToken, verifyPayment);
 
 // Handle payment failure
 router.post('/failure', verifyToken, handlePaymentFailure);
+
+// Razorpay Webhook (Public)
+router.post('/webhook', handleWebhook);
 
 // Get payment status
 router.get('/status/:orderId', verifyToken, getPaymentStatus);

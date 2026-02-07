@@ -59,19 +59,23 @@ export const createProduct = async (req, res, next) => {
             imageUrls.push(...uploadedImages);
         }
 
-        let videoUrl = "";
+        const videoUrls = [];
         if (req.files && req.files["video"] && req.files["video"].length > 0) {
-            const videoFile = req.files["video"][0];
-            videoUrl = await new Promise((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream(
-                    { folder: "products_videos", resource_type: "video" },
-                    (error, result) => {
-                        if (error) return reject(error);
-                        resolve(result.secure_url);
-                    }
-                );
-                Readable.from(videoFile.buffer).pipe(stream);
+            const videoUploadPromises = req.files["video"].map((file) => {
+                return new Promise((resolve, reject) => {
+                    const stream = cloudinary.uploader.upload_stream(
+                        { folder: "products_videos", resource_type: "video" },
+                        (error, result) => {
+                            if (error) return reject(error);
+                            resolve(result.secure_url);
+                        }
+                    );
+                    Readable.from(file.buffer).pipe(stream);
+                });
             });
+
+            const uploadedVideos = await Promise.all(videoUploadPromises);
+            videoUrls.push(...uploadedVideos);
         }
 
         let finalSizes = sizes;
@@ -133,7 +137,7 @@ export const createProduct = async (req, res, next) => {
             price: Number(price),
             originalPrice: originalPrice ? Number(originalPrice) : undefined,
             images: imageUrls,
-            video: videoUrl,
+            video: videoUrls,
             category,
             subcategory,
             sizes: (finalSizes && finalSizes.length > 0) ? finalSizes : ["XS", "S", "M", "L", "XL"],
@@ -197,19 +201,30 @@ export const updateProduct = async (req, res, next) => {
         }
 
         // Handle Video
-        let updatedVideo = req.body.video; // Keep existing video if passed
+        let updatedVideos = [];
+        if (req.body.video) {
+            if (Array.isArray(req.body.video)) {
+                updatedVideos = [...req.body.video];
+            } else {
+                updatedVideos = [req.body.video];
+            }
+        }
+
         if (req.files && req.files["video"] && req.files["video"].length > 0) {
-            const videoFile = req.files["video"][0];
-            updatedVideo = await new Promise((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream(
-                    { folder: "products_videos", resource_type: "video" },
-                    (error, result) => {
-                        if (error) return reject(error);
-                        resolve(result.secure_url);
-                    }
-                );
-                Readable.from(videoFile.buffer).pipe(stream);
+            const videoUploadPromises = req.files["video"].map((file) => {
+                return new Promise((resolve, reject) => {
+                    const stream = cloudinary.uploader.upload_stream(
+                        { folder: "products_videos", resource_type: "video" },
+                        (error, result) => {
+                            if (error) return reject(error);
+                            resolve(result.secure_url);
+                        }
+                    );
+                    Readable.from(file.buffer).pipe(stream);
+                });
             });
+            const newVideoUrls = await Promise.all(videoUploadPromises);
+            updatedVideos.push(...newVideoUrls);
         }
 
         let finalSizes = sizes;
@@ -271,7 +286,7 @@ export const updateProduct = async (req, res, next) => {
             subcategory,
             sizes: (finalSizes && finalSizes.length > 0) ? finalSizes : undefined,
             images: updatedImages.length > 0 ? updatedImages : undefined,
-            video: updatedVideo,
+            video: updatedVideos,
             countInStock: countInStock !== undefined ? Number(countInStock) : undefined,
             inStock: inStock !== undefined ? (inStock === "true" || inStock === true) : undefined,
             addOnItems: parsedAddOnItems,

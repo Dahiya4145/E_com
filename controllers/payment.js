@@ -139,6 +139,77 @@ export const verifyPayment = async (req, res) => {
     }
 };
 
+// Handle Razorpay Webhook
+export const handleWebhook = async (req, res) => {
+    try {
+        const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+        const signature = req.headers['x-razorpay-signature'];
+
+        if (!signature || !secret) {
+            return res.status(400).json({ message: 'Signature and secret are required for webhook' });
+        }
+
+        // Verify webhook signature
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(JSON.stringify(req.body))
+            .digest('hex');
+
+        if (signature !== expectedSignature) {
+            return res.status(400).json({ message: 'Invalid webhook signature' });
+        }
+
+        const { event, payload } = req.body;
+        console.log(`Razorpay Webhook Received: ${event}`);
+
+        if (event === 'payment.captured') {
+            const razorpayPayment = payload.payment.entity;
+            const razorpayOrderId = razorpayPayment.order_id;
+            const orderId = razorpayPayment.notes.orderId; // We passed this in createPaymentOrder
+
+            const order = await Order.findById(orderId);
+            if (order && !order.isPaid) {
+                order.isPaid = true;
+                order.paidAt = Date.now();
+                order.paymentResult = {
+                    id: razorpayPayment.id,
+                    status: 'completed',
+                    update_time: Date.now(),
+                    razorpay_order_id: razorpayOrderId,
+                    payment_method: 'razorpay'
+                };
+
+                order.trackingStatus = 'confirmed';
+                order.trackingHistory.push({
+                    status: 'confirmed',
+                    message: 'Order confirmed via Webhook',
+                    location: 'Online',
+                    timestamp: new Date()
+                });
+
+                await order.save();
+
+                // Fetch user for notifications
+                // Note: req.user is not available in webhook, we need to handle notifications carefully
+                // For now, let's just mark it paid. Full notification logic would need more lookups.
+                console.log(`Order ${orderId} marked as paid via Webhook.`);
+            }
+        } else if (event === 'payment.failed') {
+            console.log(`Payment failed for order: ${payload.payment.entity.notes.orderId}`);
+        }
+
+        res.json({ status: 'ok' });
+    } catch (error) {
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map(val => val.message);
+            console.error('Webhook Validation Error:', messages);
+        } else {
+            console.error('Webhook Error:', error);
+        }
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // Handle payment failure
 export const handlePaymentFailure = async (req, res) => {
     try {
